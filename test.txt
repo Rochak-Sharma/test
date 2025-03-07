@@ -1,0 +1,98 @@
+import os
+import json
+import random
+import string
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+from time import time
+from pathlib import Path
+
+num_files = 5000
+min_records = 50
+max_records = 100
+min_cities = 100
+max_cities = 200
+min_null_chance = 0.005
+max_null_chance = 0.001
+
+def random_city():
+    return ''.join(random.choices(string.ascii_uppercase, k=5))
+
+cities = [random_city() for _ in range(random.randint(min_cities, max_cities))]
+
+def random_flight():
+    flight = {
+        "date": (datetime.now() - timedelta(days=random.randint(1, 365))).isoformat(),
+        "origin_city": random.choice(cities),
+        "destination_city": random.choice(cities),
+        "flight_duration": random.randint(3600, 10800),
+        "passengers": random.randint(50, 300)
+    }
+    
+    if random.random() < random.uniform(min_null_chance, max_null_chance):
+        flight[random.choice(list(flight.keys()))] = None
+    
+    return flight
+
+def create_files():
+    folder = Path("/tmp/flights")
+    folder.mkdir(parents=True, exist_ok=True)
+
+    for _ in range(num_files):
+        city = random.choice(cities)
+        file_name = f"{datetime.now().strftime('%m-%Y')}-{city}-flights.json"
+        file_path = folder / file_name
+
+        flights = [random_flight() for _ in range(random.randint(min_records, max_records))]
+        
+        with open(file_path, "w") as f:
+            json.dump(flights, f)
+
+def process_files():
+    folder = Path("PATH FOLDER")
+    total = 0
+    dirty = 0
+    flights = []
+
+    start = time()
+    
+    for file_path in folder.glob("*.json"):
+        with open(file_path, "r") as f:
+            records = json.load(f)
+            for record in records:
+                total += 1
+                if any(value is None for value in record.values()):
+                    dirty += 1
+                    continue
+                flights.append(record)
+    
+    df = pd.DataFrame(flights)
+    
+    top_cities = df["destination_city"].value_counts().head(25).index.tolist()
+    
+    duration_stats = df[df["destination_city"].isin(top_cities)].groupby("destination_city")["flight_duration"].agg(
+        avg="mean",
+        p95=lambda x: np.percentile(x, 95)
+    ).reset_index()
+    
+    arrived = df.groupby("destination_city")["passengers"].sum().reset_index()
+    left = df.groupby("origin_city")["passengers"].sum().reset_index()
+    
+    max_arrived = arrived.loc[arrived["passengers"].idxmax()]
+    max_left = left.loc[left["passengers"].idxmax()]
+    
+    elapsed = time() - start
+    
+    print(f"Total: {total}")
+    print(f"Dirty: {dirty}")
+    print(f"Time: {elapsed:.2f}s")
+    
+    print("\nDuration Stats:")
+    print(duration_stats)
+    
+    print(f"\nMax Arrived: {max_arrived['destination_city']} ({max_arrived['passengers']})")
+    print(f"Max Left: {max_left['origin_city']} ({max_left['passengers']})")
+
+create_files()
+process_files()
